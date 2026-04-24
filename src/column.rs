@@ -17,14 +17,49 @@ const MIN_TRAIL: usize = 8;
 const MAX_TRAIL: usize = 22;
 
 #[derive(Clone, Copy)]
-#[allow(dead_code)]
-enum GlyphStyle {
+pub enum GlyphStyle {
     ClassicMatrix,
     Balanced,
     AsciiGlitch,
 }
 
-const GLYPH_STYLE: GlyphStyle = GlyphStyle::Balanced;
+impl GlyphStyle {
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "classic" => Some(Self::ClassicMatrix),
+            "balanced" => Some(Self::Balanced),
+            "ascii" => Some(Self::AsciiGlitch),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct ColumnSettings {
+    pub glyph_style: GlyphStyle,
+    pub speed_scale: f32,
+    pub min_trail: usize,
+    pub max_trail: usize,
+    pub initial_delay_max: u32,
+    pub restart_delay_min: u32,
+    pub restart_delay_max: u32,
+    pub mutation_chance: f64,
+}
+
+impl Default for ColumnSettings {
+    fn default() -> Self {
+        Self {
+            glyph_style: GlyphStyle::Balanced,
+            speed_scale: 1.0,
+            min_trail: MIN_TRAIL,
+            max_trail: MAX_TRAIL,
+            initial_delay_max: 72,
+            restart_delay_min: 4,
+            restart_delay_max: 96,
+            mutation_chance: 0.14,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct Column {
@@ -35,32 +70,38 @@ pub struct Column {
     pub trail_length: usize,
     pub active: bool,
     pub delay: u32,
+    settings: ColumnSettings,
 }
 
 impl Column {
-    pub fn new(x: u16, rng: &mut impl Rng) -> Self {
-        let trail_length = rng.gen_range(MIN_TRAIL..=MAX_TRAIL);
+    pub fn new(x: u16, settings: ColumnSettings, rng: &mut impl Rng) -> Self {
+        let trail_length = rng.gen_range(settings.min_trail..=settings.max_trail);
         let mut column = Self {
             x,
             y: -(trail_length as f32),
-            speed: random_speed_tier(rng),
+            speed: random_speed_tier(rng, settings.speed_scale),
             trail: vec![' '; trail_length],
             trail_length,
             active: false,
-            delay: rng.gen_range(0..72),
+            delay: rng.gen_range(0..settings.initial_delay_max.max(1)),
+            settings,
         };
         column.randomize_trail(rng);
         column
     }
 
     pub fn reset_fall(&mut self, rng: &mut impl Rng) {
-        self.trail_length = rng.gen_range(MIN_TRAIL..=MAX_TRAIL);
+        self.trail_length = rng.gen_range(self.settings.min_trail..=self.settings.max_trail);
         self.trail.resize(self.trail_length, ' ');
         self.randomize_trail(rng);
         self.y = -(self.trail_length as f32);
-        self.speed = random_speed_tier(rng);
+        self.speed = random_speed_tier(rng, self.settings.speed_scale);
         self.active = false;
-        self.delay = rng.gen_range(4..96);
+        let restart_max = self
+            .settings
+            .restart_delay_max
+            .max(self.settings.restart_delay_min + 1);
+        self.delay = rng.gen_range(self.settings.restart_delay_min..restart_max);
     }
 
     pub fn tick(&mut self, terminal_height: u16, rng: &mut impl Rng) {
@@ -83,32 +124,33 @@ impl Column {
 
     fn randomize_trail(&mut self, rng: &mut impl Rng) {
         for ch in &mut self.trail {
-            *ch = random_char(rng);
+            *ch = random_char(self.settings.glyph_style, rng);
         }
     }
 
     fn mutate(&mut self, rng: &mut impl Rng) {
         if !self.trail.is_empty() {
-            self.trail[0] = random_char(rng);
+            self.trail[0] = random_char(self.settings.glyph_style, rng);
         }
         for ch in &mut self.trail {
-            if rng.gen_bool(0.14) {
-                *ch = random_char(rng);
+            if rng.gen_bool(self.settings.mutation_chance) {
+                *ch = random_char(self.settings.glyph_style, rng);
             }
         }
     }
 }
 
-fn random_speed_tier(rng: &mut impl Rng) -> f32 {
-    match rng.gen_range(0..3) {
+fn random_speed_tier(rng: &mut impl Rng, speed_scale: f32) -> f32 {
+    let base = match rng.gen_range(0..3) {
         0 => rng.gen_range(0.35..=0.60), // slow
         1 => rng.gen_range(0.75..=1.10), // medium
         _ => rng.gen_range(1.20..=1.50), // fast
-    }
+    };
+    base * speed_scale
 }
 
-fn random_char(rng: &mut impl Rng) -> char {
-    match GLYPH_STYLE {
+fn random_char(glyph_style: GlyphStyle, rng: &mut impl Rng) -> char {
+    match glyph_style {
         GlyphStyle::ClassicMatrix => match rng.gen_range(0..10) {
             0..=6 => KATAKANA[rng.gen_range(0..KATAKANA.len())],
             7..=8 => DIGITS[rng.gen_range(0..DIGITS.len())],

@@ -37,24 +37,22 @@ src/
 cargo run
 ```
 
+### Runtime Options
+
+```bash
+cargo run -- --fps 60 --density 0.8 --speed 1.2 --glyph-style classic
+```
+
+- `--fps <10-240>` target frame rate (default `30`)
+- `--density <0.1-1.0>` active column density (default `1.0`)
+- `--speed <0.5-2.0>` global speed multiplier (default `1.0`)
+- `--glyph-style <classic|balanced|ascii>` glyph distribution
+
 ## Controls
 
 - `q` -> quit
 - `Ctrl+C` -> quit
-
-## Customize Glyph Style
-
-In `src/column.rs`, change:
-
-```rust
-const GLYPH_STYLE: GlyphStyle = GlyphStyle::Balanced;
-```
-
-Available modes:
-
-- `GlyphStyle::ClassicMatrix`
-- `GlyphStyle::Balanced`
-- `GlyphStyle::AsciiGlitch`
+- `space` -> pause/resume
 
 ## Build Check
 
