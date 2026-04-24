@@ -6,6 +6,7 @@ pub enum InputAction {
     None,
     Quit,
     TogglePause,
+    ToggleOverlay,
     Resized(u16, u16),
 }
 
@@ -22,6 +23,9 @@ pub fn poll_input() -> std::io::Result<InputAction> {
             }
             if matches!(key_event.code, KeyCode::Char(' ')) {
                 return Ok(InputAction::TogglePause);
+            }
+            if matches!(key_event.code, KeyCode::Char('h') | KeyCode::Char('H')) {
+                return Ok(InputAction::ToggleOverlay);
             }
             if matches!(key_event.code, KeyCode::Char('c'))
                 && key_event.modifiers.contains(KeyModifiers::CONTROL)

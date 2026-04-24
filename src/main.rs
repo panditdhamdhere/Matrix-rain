@@ -17,7 +17,7 @@ use crossterm::terminal::{
 };
 use input::{InputAction, poll_input};
 use rand::thread_rng;
-use renderer::Renderer;
+use renderer::{OverlayState, Renderer};
 
 struct TerminalGuard {
     stdout: Stdout,
@@ -67,6 +67,8 @@ fn run(guard: &mut TerminalGuard, config: AppConfig) -> std::io::Result<()> {
     let mut rng = thread_rng();
     let frame_time = config.frame_time();
     let mut paused = false;
+    let mut show_overlay = true;
+    let mut fps_smoothed = config.fps as f32;
 
     loop {
         let frame_start = Instant::now();
@@ -76,6 +78,7 @@ fn run(guard: &mut TerminalGuard, config: AppConfig) -> std::io::Result<()> {
                 InputAction::None => break,
                 InputAction::Quit => return Ok(()),
                 InputAction::TogglePause => paused = !paused,
+                InputAction::ToggleOverlay => show_overlay = !show_overlay,
                 InputAction::Resized(new_width, new_height) => {
                     width = new_width;
                     height = new_height;
@@ -90,9 +93,22 @@ fn run(guard: &mut TerminalGuard, config: AppConfig) -> std::io::Result<()> {
                 column.tick(height, &mut rng);
             }
         }
-        renderer.render(&mut guard.stdout, &columns)?;
+        renderer.render(
+            &mut guard.stdout,
+            &columns,
+            &OverlayState {
+                visible: show_overlay,
+                paused,
+                fps: fps_smoothed,
+                theme: config.theme,
+                density: config.density,
+                speed_scale: config.speed_scale,
+            },
+        )?;
 
         let elapsed = frame_start.elapsed();
+        let instant_fps = 1.0 / elapsed.as_secs_f32().max(0.001);
+        fps_smoothed = fps_smoothed * 0.9 + instant_fps * 0.1;
         if elapsed < frame_time {
             thread::sleep(frame_time - elapsed);
         }

@@ -6,6 +6,7 @@ use crossterm::cursor::MoveTo;
 use crossterm::style::{Attribute, Color, Print, SetAttribute, SetForegroundColor};
 
 use crate::column::Column;
+use crate::config::Theme;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct CellStyle {
@@ -19,6 +20,15 @@ pub struct Renderer {
     height: u16,
     previous: HashMap<(u16, u16), CellStyle>,
     frame: u64,
+}
+
+pub struct OverlayState {
+    pub visible: bool,
+    pub paused: bool,
+    pub fps: f32,
+    pub theme: Theme,
+    pub density: f32,
+    pub speed_scale: f32,
 }
 
 impl Renderer {
@@ -37,7 +47,12 @@ impl Renderer {
         self.previous.clear();
     }
 
-    pub fn render(&mut self, stdout: &mut Stdout, columns: &[Column]) -> std::io::Result<()> {
+    pub fn render(
+        &mut self,
+        stdout: &mut Stdout,
+        columns: &[Column],
+        overlay: &OverlayState,
+    ) -> std::io::Result<()> {
         let mut current = HashMap::new();
         self.frame = self.frame.wrapping_add(1);
 
@@ -53,10 +68,13 @@ impl Renderer {
                 let Some(&glyph) = column.trail.get(i) else {
                     continue;
                 };
-                let (base_color, bold) = color_for_index(i, column.trail_length);
+                let (base_color, bold) = color_for_index(i, column.trail_length, overlay.theme);
                 let color = apply_pulse(base_color, column.x, y as u16, self.frame, i);
                 current.insert((column.x, y as u16), CellStyle { glyph, color, bold });
             }
+        }
+        if overlay.visible {
+            add_overlay_line(self.width, &mut current, overlay);
         }
 
         let mut dirty = HashSet::new();
@@ -101,48 +119,25 @@ impl Renderer {
     }
 }
 
-fn color_for_index(index: usize, trail_length: usize) -> (Color, bool) {
+fn color_for_index(index: usize, trail_length: usize, theme: Theme) -> (Color, bool) {
+    let palette = palette_for(theme);
     if index == 0 {
-        return (
-            Color::Rgb {
-                r: 255,
-                g: 255,
-                b: 255,
-            },
-            true,
-        );
+        return (rgb(palette.head), true);
     }
     if index == 1 {
-        return (
-            Color::Rgb {
-                r: 0,
-                g: 255,
-                b: 65,
-            },
-            false,
-        );
+        return (rgb(palette.second), false);
     }
     if index == 2 {
-        return (
-            Color::Rgb {
-                r: 40,
-                g: 235,
-                b: 95,
-            },
-            false,
-        );
+        return (rgb(palette.third), false);
     }
 
     let t = (index as f32) / (trail_length.max(2) as f32 - 1.0);
     let (r, g, b) = if t < 0.45 {
-        // medium green -> dark green
-        lerp_rgb((0, 175, 65), (0, 110, 45), t / 0.45)
+        lerp_rgb(palette.mid, palette.dark, t / 0.45)
     } else if t < 0.80 {
-        // dark green -> very dark green
-        lerp_rgb((0, 110, 45), (0, 45, 22), (t - 0.45) / 0.35)
+        lerp_rgb(palette.dark, palette.vdark, (t - 0.45) / 0.35)
     } else {
-        // very dark green -> almost black-green
-        lerp_rgb((0, 45, 22), (0, 8, 4), (t - 0.80) / 0.20)
+        lerp_rgb(palette.vdark, palette.near_black, (t - 0.80) / 0.20)
     };
 
     (Color::Rgb { r, g, b }, false)
@@ -175,5 +170,89 @@ fn apply_pulse(color: Color, x: u16, y: u16, frame: u64, depth: usize) -> Color 
         r: (r as f32 * factor).clamp(0.0, 255.0) as u8,
         g: (g as f32 * factor).clamp(0.0, 255.0) as u8,
         b: (b as f32 * factor).clamp(0.0, 255.0) as u8,
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ThemePalette {
+    head: (u8, u8, u8),
+    second: (u8, u8, u8),
+    third: (u8, u8, u8),
+    mid: (u8, u8, u8),
+    dark: (u8, u8, u8),
+    vdark: (u8, u8, u8),
+    near_black: (u8, u8, u8),
+}
+
+fn palette_for(theme: Theme) -> ThemePalette {
+    match theme {
+        Theme::Matrix => ThemePalette {
+            head: (255, 255, 255),
+            second: (0, 255, 65),
+            third: (40, 235, 95),
+            mid: (0, 175, 65),
+            dark: (0, 110, 45),
+            vdark: (0, 45, 22),
+            near_black: (0, 8, 4),
+        },
+        Theme::Amber => ThemePalette {
+            head: (255, 255, 255),
+            second: (255, 200, 30),
+            third: (245, 165, 25),
+            mid: (210, 120, 18),
+            dark: (140, 70, 12),
+            vdark: (70, 30, 6),
+            near_black: (12, 5, 2),
+        },
+        Theme::Ice => ThemePalette {
+            head: (255, 255, 255),
+            second: (130, 245, 255),
+            third: (90, 225, 255),
+            mid: (70, 185, 230),
+            dark: (35, 115, 165),
+            vdark: (18, 58, 95),
+            near_black: (4, 12, 22),
+        },
+    }
+}
+
+fn rgb(rgb: (u8, u8, u8)) -> Color {
+    Color::Rgb {
+        r: rgb.0,
+        g: rgb.1,
+        b: rgb.2,
+    }
+}
+
+fn add_overlay_line(
+    width: u16,
+    current: &mut HashMap<(u16, u16), CellStyle>,
+    overlay: &OverlayState,
+) {
+    if width == 0 {
+        return;
+    }
+    let status = if overlay.paused { "PAUSED" } else { "RUNNING" };
+    let text = format!(
+        "[{}] {} | fps:{:>5.1} | density:{:.2} | speed:{:.2} | q quit | space pause | h hide",
+        status,
+        overlay.theme.as_str(),
+        overlay.fps,
+        overlay.density,
+        overlay.speed_scale
+    );
+    for (idx, ch) in text.chars().take(width as usize).enumerate() {
+        current.insert(
+            (idx as u16, 0),
+            CellStyle {
+                glyph: ch,
+                color: Color::Rgb {
+                    r: 170,
+                    g: 170,
+                    b: 170,
+                },
+                bold: false,
+            },
+        );
     }
 }

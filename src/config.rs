@@ -4,11 +4,38 @@ use std::fmt::{Display, Formatter};
 use crate::column::{ColumnSettings, GlyphStyle};
 
 #[derive(Clone, Copy)]
+pub enum Theme {
+    Matrix,
+    Amber,
+    Ice,
+}
+
+impl Theme {
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "matrix" => Some(Self::Matrix),
+            "amber" => Some(Self::Amber),
+            "ice" => Some(Self::Ice),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Matrix => "matrix",
+            Self::Amber => "amber",
+            Self::Ice => "ice",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct AppConfig {
     pub fps: u64,
     pub density: f32,
     pub speed_scale: f32,
     pub glyph_style: GlyphStyle,
+    pub theme: Theme,
 }
 
 impl Default for AppConfig {
@@ -18,6 +45,7 @@ impl Default for AppConfig {
             density: 1.0,
             speed_scale: 1.0,
             glyph_style: GlyphStyle::Balanced,
+            theme: Theme::Matrix,
         }
     }
 }
@@ -62,6 +90,14 @@ impl AppConfig {
                             value,
                             expected: "classic|balanced|ascii",
                         }
+                    })?;
+                }
+                "--theme" => {
+                    let value = next_value(&mut args, "--theme")?;
+                    cfg.theme = Theme::from_str(&value).ok_or(ConfigError::InvalidArgValue {
+                        key: "--theme",
+                        value,
+                        expected: "matrix|amber|ice",
                     })?;
                 }
                 _ => {
@@ -178,5 +214,6 @@ pub fn usage_text() -> &'static str {
   --speed <0.5-2.0>           Global speed multiplier (default: 1.0)
   --glyph-style <classic|balanced|ascii>
                               Character style (default: balanced)
+  --theme <matrix|amber|ice>  Color theme (default: matrix)
   -h, --help                  Show this help"
 }

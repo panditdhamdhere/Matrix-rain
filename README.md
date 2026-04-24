@@ -40,19 +40,21 @@ cargo run
 ### Runtime Options
 
 ```bash
-cargo run -- --fps 60 --density 0.8 --speed 1.2 --glyph-style classic
+cargo run -- --fps 60 --density 0.8 --speed 1.2 --glyph-style classic --theme matrix
 ```
 
 - `--fps <10-240>` target frame rate (default `30`)
 - `--density <0.1-1.0>` active column density (default `1.0`)
 - `--speed <0.5-2.0>` global speed multiplier (default `1.0`)
 - `--glyph-style <classic|balanced|ascii>` glyph distribution
+- `--theme <matrix|amber|ice>` color theme
 
 ## Controls
 
 - `q` -> quit
 - `Ctrl+C` -> quit
 - `space` -> pause/resume
+- `h` -> toggle status/help overlay
 
 ## Build Check
 
